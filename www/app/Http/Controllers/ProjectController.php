@@ -93,8 +93,8 @@ class ProjectController extends BaseController
     public function link(Request $request)
     {
         $request->validate([
-            'project_id' => ['required', 'exists:project_user,project_id'],
-            'user_id'    => ['required', 'exists:project_user,user_id'],
+            'project_id' => ['required', 'exists:projects,id'],
+            'user_id'    => ['required', 'exists:users,id'],
         ]);
         foreach ($request['project_id'] as $key => $project_id) {
             $project = Project::find($project_id);
