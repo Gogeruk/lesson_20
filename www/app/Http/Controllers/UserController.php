@@ -9,11 +9,14 @@ use App\Http\Resources\UserCollection;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Routing\Controller as BaseController;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use App\Jobs\ProcessUser;
 use App\Models\Country;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\VerifyUserMail;
+use Validator;
 
 class UserController extends BaseController
 {
@@ -50,64 +53,103 @@ class UserController extends BaseController
 
     public function delete(Request $request)
     {
-        if (auth()->user()) {
-            $user = User::find(auth()->user()->id);
+        $rules = [
+            'api_token'   => ['required', 'array'],
+            'api_token.*' => ['distinct:strict', 'min:20', 'max:20'],
+        ];
 
-            $user->projects()->detach();
-            $user->delete();
+        $validator = Validator::make($request->all(), $rules);
 
+        if ($validator->passes()) {
+
+            $i = 0;
+            foreach ($request['api_token'] as $value) {
+                $user = User::where('api_token', $request['api_token'][$i])
+                    ->first();
+                if ($user != null) {
+                    $user->projects()->detach();
+                    $user->delete();
+                }
+
+                $i++;
+            }
             return response()->json(null, 204);
+        }else {
+            return($validator->errors()->all());
         }
-        return response()->json(null, 400);
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'name'     => ['required', 'unique:users,name', 'min :3', 'max     :255', 'string'],
-            'email'    => ['required', 'unique:users,email', 'min:5', 'max     :255', 'string'],
-            'password' => ['required', 'min:5', 'max:255'],
-            'country'  => ['required', 'min:2', 'max:255', 'exists:countries,country_code'],
-        ]);
-
-        $request = [
-            'email'    => $request['email'],
-            'name'     => $request['name'],
-            'password' => $request['password'],
-            'country'  => $request['country'],
+        $rules = [
+            'name'       => ['required', 'array'],
+            'email'      => ['required', 'array'],
+            'password'   => ['required', 'array'],
+            'country'    => ['required', 'array'],
+            'name.*'     => ['distinct:strict', 'string', 'unique:users,name', 'min :3', 'max:255'],
+            'email.*'    => ['distinct:strict', 'string', 'unique:users,email', 'min:5', 'max:255', 'email'],
+            'password.*' => ['min:5', 'max:255'],
+            'country.*'  => ['string', 'min:2', 'max:2', 'exists:countries,country_code'],
         ];
 
-        ProcessUser::dispatch($request)
-            ->onQueue('process_user');
+        $validator = Validator::make($request->all(), $rules);
 
-        return response()->json(null, 204);
+        if ($validator->passes()) {
+            $request = [
+                'email'    => $request['email'],
+                'name'     => $request['name'],
+                'password' => $request['password'],
+                'country'  => $request['country'],
+            ];
+
+            ProcessUser::dispatch($request)
+                ->onQueue('process_user');
+
+            return response()->json(null, 204);
+        }else {
+            return($validator->errors()->all());
+        }
     }
 
     public function update(Request $request)
     {
-        if (auth()->user()) {
-            $request->validate([
-                'name'     => ['required', 'unique:users,name', 'min :3', 'max     :255', 'string'],
-                'email'    => ['required', 'unique:users,email', 'min:5', 'max     :255', 'string'],
-                'password' => ['required', 'min:5', 'max:255'],
-                'country'  => ['required', 'min:2', 'max:255', 'exists:countries,country_code'],
-            ]);
+        $rules = [
+            'api_token'   => ['required', 'array'],
+            'name'        => ['required', 'array'],
+            'email'       => ['required', 'array'],
+            'password'    => ['required', 'array'],
+            'country'     => ['required', 'array'],
+            'api_token.*' => ['required', 'distinct:strict', 'min:20', 'max:20'],
+            'name.*'      => ['distinct:strict', 'string', 'unique:users,name', 'min :3', 'max:255'],
+            'email.*'     => ['distinct:strict', 'string', 'unique:users,email', 'min:5', 'max:255', 'email'],
+            'password.*'  => ['min:5', 'max:255'],
+            'country.*'   => ['string', 'min:2', 'max:2', 'exists:countries,country_code'],
+        ];
 
-            $user = User::find(auth()->user()->id);
-            if ( $request['country'] != null) {
-                $country_id = Country::where('country_code', '=', $request['country'])
-                    ->first()->id;
-                $user ->country_id = $country_id;
+        $validator = Validator::make($request->all(), $rules);
+
+        if ($validator->passes()) {
+
+            $i = 0;
+            foreach ($request['api_token'] as $value) {
+                $user = User::where('api_token', $request['api_token'][$i])
+                    ->first();
+                if ($user != null) {
+                    $country_id = Country::where('country_code', '=', $request['country'][$i])
+                        ->first()->id;
+                    $user ->country_id = $country_id;
+                    $user ->email      = $request['email'][$i];
+                    $user ->name       = $request['name'][$i];
+                    $user ->password   = Hash::make($request['password'][$i]);
+                    $user ->save();
+                }
+
+                $i++;
             }
-
-            $user ->email      = $request['email'];
-            $user ->name       = $request['name'];
-            $user ->password   = Hash::make($request['password']);
-            $user ->save();
-
-            return new UserResource($user);
+            return response()->json(null, 204);
+        }else {
+            return($validator->errors()->all());
         }
-        return response()->json(null, 400);
     }
 
     public function verify(Request $request)
@@ -117,9 +159,11 @@ class UserController extends BaseController
             return response()->json(null, 404);
         }
 
+        Mail::to($user->email)->send(new VerifyUserMail($user->name, $user->api_token));
+
         $user ->verified  = 1;
         $user ->save();
 
-        return new UserResource($user);
+        return response()->json(null, 204);
     }
 }

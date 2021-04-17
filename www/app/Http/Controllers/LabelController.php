@@ -10,6 +10,7 @@ use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\DB;
+use Validator;
 
 class LabelController extends BaseController
 {
@@ -27,9 +28,8 @@ class LabelController extends BaseController
             }
 
             if ($request->filled(['projects'])) {
-                if (!is_array($request->get('projects'))) {
-                    abort(400, 'ARE YOU TRYING TO BREAK ME? HOW DARE YOU!?!?!?');
-                }
+                abort_if(!is_array($request->get('projects')), 400, 'MUST BE AN ARRAY');
+
                 $query->join('label_project', 'labels.id', '=','label_project.label_id')
                         ->whereIn('project_id', $request->get('projects'));
             }
@@ -43,37 +43,57 @@ class LabelController extends BaseController
     public function delete(Request $request)
     {
         if (auth()->user()) {
-            $label = Label::find($request->input()['id_of_a_label']);
-            if ($label == null) {
-                return response()->json(null, 404);
-            }
-            if ($label->user_id != auth()->user()->id) {
-                return response()->json(null, 401);
-            }
+            $rules = [
+                'id_of_a_label'   => ['required', 'array'],
+                'id_of_a_label.*' => ['distinct:strict', 'exists:labels,id'],
+            ];
 
-            $label->projects()->detach();
-            $label->delete();
+            $validator = Validator::make($request->all(), $rules);
 
-            return response()->json(null, 204);
+            if ($validator->passes()) {
+
+                $i = 0;
+                foreach ($request->input()['id_of_a_label'] as $value) {
+                    $label = Label::find($request->input()['id_of_a_label'][$i]);
+                    abort_if(auth()->user()
+                        ->cannot('delete', $label), 401, 'UNAUTHORIZED, PLEASE GO AWAY');
+                    $label->projects()->detach();
+                    $label->delete();
+
+                    $i++;
+                }
+                return response()->json(null, 204);
+            }else {
+                return($validator->errors()->all());
+            }
         }
-        return response()->json(null, 400);
     }
 
     public function store(Request $request)
     {
         if (auth()->user()) {
-            $request->validate([
-                'label_name'  => ['required', 'unique:labels,name', 'min :3', 'max:255', 'string'],
-            ]);
+            $rules = [
+                'label_name'   => ['required', 'array'],
+                'label_name.*' => ['distinct:strict', 'unique:labels,name', 'min :3', 'max:255', 'string'],
+            ];
 
-            $label = new Label;
-            $label ->name    = $request['label_name'];
-            $label ->user_id = auth()->user()->id;
-            $label ->save();
+            $validator = Validator::make($request->all(), $rules);
 
-            return new LabelResource($label);
+            if ($validator->passes()) {
+                $i = 0;
+                foreach ($request['label_name'] as $value) {
+                    $label = new Label;
+                    $label ->name    = $request['label_name'][$i];
+                    $label ->user_id = auth()->user()->id;
+                    $label ->save();
+
+                    $i++;
+                }
+                return response()->json(null, 204);
+            }else {
+                return($validator->errors()->all());
+            }
         }
-        return response()->json(null, 400);
     }
 
 

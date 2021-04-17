@@ -10,6 +10,7 @@ use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\DB;
+use Validator;
 
 class ProjectController extends BaseController
 {
@@ -29,9 +30,7 @@ class ProjectController extends BaseController
             }
 
             if ($request->filled(['labels'])) {
-                if (!is_array($request->get('labels'))) {
-                    return response()->json('ARE YOU TRYING TO BREAK ME? HOW DARE YOU!?!?!?', 400);
-                }
+                abort_if(!is_array($request->get('labels')), 400, 'MUST BE AN ARRAY');
 
                 $query->join('label_project', 'projects.id', '=','label_project.project_id')
                     ->whereIn('label_id', $request->get('labels'));
@@ -54,40 +53,59 @@ class ProjectController extends BaseController
     public function delete(Request $request)
     {
         if (auth()->user()) {
-            $project = Project::find($request->input()['id_of_a_project']);
-            if ($project == null) {
-                return response()->json(null, 404);
-            }
-            if ($project->user_id != auth()->user()->id) {
-                return response()->json(null, 401);
-            }
+            $rules = [
+                'id_of_a_project'   => ['required', 'array'],
+                'id_of_a_project.*' => ['distinct:strict', 'exists:projects,id'],
+            ];
 
-            $project->labels()->detach();
-            $project->users()->detach();
-            $project->delete();
+            $validator = Validator::make($request->all(), $rules);
 
-            return response()->json(null, 204);
+            if ($validator->passes()) {
+
+                $i = 0;
+                foreach ($request->input()['id_of_a_project'] as $value) {
+                    $project = Project::find($request->input()['id_of_a_project'][$i]);
+                    abort_if(auth()->user()
+                        ->cannot('delete', $project), 401, 'UNAUTHORIZED, PLEASE GO AWAY');
+                    $project->labels()->detach();
+                    $project->users()->detach();
+                    $project->delete();
+
+                    $i++;
+                }
+                return response()->json(null, 204);
+            }else {
+                return($validator->errors()->all());
+            }
         }
-        return response()->json(null, 400);
     }
 
     public function store(Request $request)
     {
         if (auth()->user()) {
-            $request->validate([
-                'project_name'  => ['required', 'unique:projects,name', 'min :3', 'max:255', 'string'],
-            ]);
+            $rules = [
+                'project_name'   => ['required', 'array'],
+                'project_name.*' => ['distinct:strict', 'unique:projects,name', 'min :3', 'max:255', 'string'],
+            ];
 
-            $project = new Project;
-            $project ->name    = $request['project_name'];
-            $project ->user_id = auth()->user()->id;
-            $project ->save();
-            $project ->users()->attach(auth()->user()->id);
+            $validator = Validator::make($request->all(), $rules);
 
+            if ($validator->passes()) {
+                $i = 0;
+                foreach ($request['project_name'] as $value) {
+                    $project = new Project;
+                    $project ->name    = $request['project_name'][$i];
+                    $project ->user_id = auth()->user()->id;
+                    $project ->save();
+                    $project ->users()->attach(auth()->user()->id);
 
-            return new ProjectResource($project);
+                    $i++;
+                }
+                return response()->json(null, 204);
+            }else {
+                return($validator->errors()->all());
+            }
         }
-        return response()->json(null, 400);
     }
 
     public function link(Request $request)

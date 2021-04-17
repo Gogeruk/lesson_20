@@ -41,12 +41,12 @@ Route::patch('/users', [UserController::class, 'verify'])->name('verifylUsers');
 
 
 // 3. Edit users
-Route::middleware('auth:api')->put('/users', [UserController::class, 'update'])->name('updateUser');
+Route::put('/users', [UserController::class, 'update'])->name('updateUser');
 
 
 // 4. Delete users
 // (HINT: Pay attention to “userS”: bulk actions) // probobly about SVIAZY so do detuh
-Route::middleware('auth:api')->delete('/users', [UserController::class, 'delete'])->name('deleteUser');
+Route::delete('/users', [UserController::class, 'delete'])->name('deleteUser');
 
 
 /////////////  PROJECT  /////////////
@@ -82,5 +82,5 @@ Route::middleware('auth:api')->get('/labels', [LabelController::class, 'listAllA
 Route::put('/labels', [LabelController::class, 'link'])->name('linkLabel');
 
 
-// 4. Delete labels    
+// 4. Delete labels
 Route::middleware('auth:api')->delete('/labels', [LabelController::class, 'delete'])->name('deleteLabel');

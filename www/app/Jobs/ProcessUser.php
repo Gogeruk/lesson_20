@@ -36,16 +36,21 @@ class ProcessUser implements ShouldQueue
      */
     public function handle()
     {
-        $country_id = Country::where('country_code', '=', $this->request['country'])
-            ->first()->id;
+        $i = 0;
+        foreach ($this->request['name'] as $key => $value) {
+            $country_id = Country::where('country_code', '=', $this->request['country'][$i])
+                ->first()->id;
 
-        $user = new User;
-        $user ->email      = $this->request['email'];
-        $user ->name       = $this->request['name'];
-        $user ->country_id = $country_id;
-        $user ->password   = Hash::make($this->request['password']);
-        $user ->api_token  = Str ::random(20);
-        $user ->setRememberToken($token = Str::random(10));
-        $user ->save();
+            $user = new User;
+            $user ->name       = $this->request['name'][$i];
+            $user ->email      = $this->request['email'][$i];
+            $user ->country_id = $country_id;
+            $user ->password   = Hash::make($this->request['password'][$i]);
+            $user ->api_token  = Str ::random(20);
+            $user ->setRememberToken($token = Str::random(10));
+            $user ->save();
+
+            $i++;
+        }
     }
 }
